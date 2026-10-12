@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 ### Fixed
 
+  - Cache the plan inserting into each history table properly.  It was
+    prepared again for every row written to history, without freeing the old
+    one, so a session's memory grew with every history row it wrote.  A
+    history table renamed and moved to another schema at once was no longer
+    found.
+
 ## [1.2] – 2020-09-21
 
 ### Added

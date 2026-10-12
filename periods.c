@@ -69,6 +69,7 @@ typedef struct InsertHistoryPlanEntry
 	Oid			history_relid;	/* the hash key; must be first */
 	char		schemaname[NAMEDATALEN];
 	char		tablename[NAMEDATALEN];
+	Oid			rowtype;		/* the type of the plan's parameter */
 	SPIPlanPtr	qplan;
 } InsertHistoryPlanEntry;
 
@@ -525,6 +526,7 @@ insert_into_history(Relation history_rel, HeapTuple history_tuple)
 	char	   *schemaname = SPI_getnspname(history_rel);
 	char	   *tablename = SPI_getrelname(history_rel);
 	Oid			history_relid = history_rel->rd_id;
+	Oid			type = HeapTupleHeaderGetTypeId(history_tuple->t_data);
 	Datum		value;
 	int			ret;
 
@@ -541,28 +543,46 @@ insert_into_history(Relation history_rel, HeapTuple history_tuple)
 			HASH_ENTER,
 			&found);
 
-	/* If we didn't find it or the name changed, re-plan it */
-	if (!found ||
-		!strcmp(hentry->schemaname, schemaname) ||
-		!strcmp(hentry->tablename, tablename))
+	if (!found)
+		hentry->qplan = NULL;
+
+	/*
+	 * If we didn't find it, or the name or the row type changed, re-plan it.
+	 * The row type is the main table's when no conversion is needed, and the
+	 * history table's otherwise.
+	 */
+	if (hentry->qplan == NULL ||
+		strcmp(hentry->schemaname, schemaname) != 0 ||
+		strcmp(hentry->tablename, tablename) != 0 ||
+		hentry->rowtype != type)
 	{
 		StringInfo	buf = makeStringInfo();
-		Oid			type = HeapTupleHeaderGetTypeId(history_tuple->t_data);
+		SPIPlanPtr	qplan;
+
+		/* Free the old plan, if any */
+		if (hentry->qplan != NULL)
+		{
+			SPI_freeplan(hentry->qplan);
+			hentry->qplan = NULL;
+		}
 
 		appendStringInfo(buf, "INSERT INTO %s VALUES (($1).*)",
 				quote_qualified_identifier(schemaname, tablename));
 
-		hentry->history_relid = history_relid;
-		strlcpy(hentry->schemaname, schemaname, sizeof(hentry->schemaname));
-		strlcpy(hentry->tablename, tablename, sizeof(hentry->tablename));
-		hentry->qplan = SPI_prepare(buf->data, 1, &type);
-		if (hentry->qplan == NULL)
+		qplan = SPI_prepare(buf->data, 1, &type);
+		if (qplan == NULL)
 			elog(ERROR, "SPI_prepare returned %s for %s",
 				 SPI_result_code_string(SPI_result), buf->data);
 
-		ret = SPI_keepplan(hentry->qplan);
+		ret = SPI_keepplan(qplan);
 		if (ret != 0)
 			elog(ERROR, "SPI_keepplan returned %s", SPI_result_code_string(ret));
+
+		hentry->history_relid = history_relid;
+		strlcpy(hentry->schemaname, schemaname, sizeof(hentry->schemaname));
+		strlcpy(hentry->tablename, tablename, sizeof(hentry->tablename));
+		hentry->rowtype = type;
+		hentry->qplan = qplan;
 	}
 
 	/* Do the INSERT */
