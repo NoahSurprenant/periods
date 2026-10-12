@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 ### Fixed
 
+  - Make the event triggers cheaper with many tables.  Several of their
+    catalog queries grew with the number of periods or system-versioned
+    tables (every pair of a table's columns, every function's signature),
+    ran after every DDL command, and were estimated costly enough to be
+    compiled by JIT, which is now turned off for them.
+
 ## [1.2] – 2020-09-21
 
 ### Added

@@ -2,6 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 /* Once support for 9.6 has passed, just create the extension */
 CREATE EXTENSION periods VERSION '1.2';
+ALTER EXTENSION periods UPDATE TO '1.3';
 
 SELECT extversion
 FROM pg_extension
